@@ -1,41 +1,112 @@
 import streamlit as st
-import os
-import subprocess
-import pyautogui
-import speech_recognition as sr
-import webbrowser
-from time import sleep
-import ctypes  # For Windows system commands
-import psutil  # For battery information
-import platform  # For system info
-
-# Import your custom modules
-from ocr_exec import ocr_interface
-from face_gui import FaceAuthenticator
-from calorie_tracker import calorie_tracker_interface
-from chatbot import chatbot_interface
-
-# Set page config - MUST be the first Streamlit command
 st.set_page_config(
     page_title="AI Desktop Assistant",
     page_icon="🤖",
     layout="wide"
 )
 
-# Initialize face authenticator in session state
+# Then other imports
+import os
+import time
+import threading
+import queue
+import subprocess
+import pyautogui
+import speech_recognition as sr
+import webbrowser
+from time import sleep
+import ctypes
+import psutil
+import platform
+
+# Local imports (create these files if missing)
+from ocr_exec import ocr_interface
+from calorie_tracker import calorie_tracker_interface
+from chatbot import chatbot_interface
+from face_gui import FaceAuthenticator, protect_resource
+
+# Move FaceAuthenticator class here temporarily to avoid circular imports
+class FaceAuthenticator:
+    def __init__(self, database_path):
+        self.database_path = database_path
+        self.result_queue = queue.Queue()
+        self.authenticated = False
+        self.authenticated_user = None
+        self.auth_timeout = 1800
+        self.last_auth_time = 0
+    
+    def authenticate(self):
+        if self.is_session_valid():
+            return True
+            
+        st.title("🔒 Face Authentication Required")
+        with st.expander("Authentication Panel", expanded=True):
+            st.write("Please authenticate using facial recognition to continue")
+            
+            if st.button("Start Face Recognition"):
+                with st.spinner("Initializing camera..."):
+                    self.reset_authentication()
+                    
+                    # Start recognition thread
+                    recognition_thread = threading.Thread(
+                        target=self.run_recognition,
+                        daemon=True
+                    )
+                    recognition_thread.start()
+                    
+                    # Create UI elements
+                    status = st.empty()
+                    log = st.empty()
+                    camera_placeholder = st.empty()
+                    messages = []
+                    
+                    # Process messages from recognition thread
+                    while recognition_thread.is_alive() or not self.result_queue.empty():
+                        try:
+                            msg = self.result_queue.get(timeout=1)
+                            
+                            if msg.startswith("Authenticated"):
+                                parts = msg.split(": ")
+                                if len(parts) >= 3:
+                                    self.authenticated = True
+                                    self.authenticated_user = parts[1]
+                                    confidence = float(parts[2].strip('%')) / 100
+                                    self.last_auth_time = time.time()
+                                    status.success(
+                                        f"✅ Authenticated as {self.authenticated_user} "
+                                        f"(Confidence: {confidence:.2%})"
+                                    )
+                                    time.sleep(2)
+                                    st.rerun()
+                            
+                            messages.append(msg)
+                            log.markdown("\n".join(messages[-3:]))
+                            
+                        except queue.Empty:
+                            time.sleep(0.1)
+                        except Exception as e:
+                            status.error(f"Error during authentication: {str(e)}")
+                            break
+                    
+                    # Clean up
+                    camera_placeholder.empty()
+        
+        return self.authenticated
+
+# Initialize in session state
 if 'face_auth' not in st.session_state:
     st.session_state.face_auth = FaceAuthenticator(
-        "C:/Users/Jammula Nehaja/OneDrive/Desktop/mini proj/face_dataset"
+        "face_dataset"  # Changed to relative path
     )
 
-# Protected resources configuration
 PROTECTED_RESOURCES = {
     "Notepad": "notepad.exe",
     "WhatsApp": "whatsapp.exe",
-    "Documents": r"C:/Users/Jammula Nehaja/Documents",
-    "Project Files": r"C:/Users/Jammula Nehaja/OneDrive/Desktop/mini proj"
+    "Documents": os.path.expanduser("~/Documents"),
+    "Project Files": os.path.expanduser("~/Desktop/mini proj")
 }
 
+# Rest of your code...
 def execute_protected_action(resource_name):
     """Handle protected resource access with authentication"""
     if st.session_state.face_auth.authenticate():
