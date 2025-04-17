@@ -322,5 +322,6 @@ def main():
         calorie_tracker_interface()
 
 if __name__ == "__main__":
-    st.title("My App")
     main()
+
+
