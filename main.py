@@ -1,60 +1,41 @@
+import sys
+from pathlib import Path
+import os
+import subprocess
+import webbrowser
+import pyautogui
+import speech_recognition as sr
 import streamlit as st
+from time import sleep
+import ctypes
+import psutil
+import platform
+
+# Add project root to Python path
+sys.path.append(str(Path(__file__).parent))
+
+# Now your imports will work
+from modules.command_executor import CommandExecutor
+from config import FACE_DATASET_PATH, SCREENSHOTS_DIR
+from face_gui import FaceAuthenticator
+
+# Import other module interfaces
+from ocr_exec import ocr_interface
+from calorie_tracker import calorie_tracker_interface
+from chatbot import chatbot_interface
+
+# Set page config MUST be the first Streamlit command
 st.set_page_config(
     page_title="AI Desktop Assistant",
     page_icon="🤖",
     layout="wide"
 )
-import os
-import subprocess
-import pyautogui
-import speech_recognition as sr
-import webbrowser
-from time import sleep
-from face_gui import FaceAuthenticator
-import ctypes  # For Windows system commands
-import psutil  # For battery information
-import platform  # For system info
 
-# Set page config MUST be the first Streamlit command and after imports
-
-# Import all your existing modules
-from ocr_exec import ocr_interface
-from face_gui import FaceAuthenticator  # Changed from protect_resource
-from calorie_tracker import calorie_tracker_interface
-from chatbot import chatbot_interface
-
-# Initialize face authenticator in session state
+# Initialize in session state
+if 'command_executor' not in st.session_state:
+    st.session_state.cmd_exec = CommandExecutor()
 if 'face_auth' not in st.session_state:
-    st.session_state.face_auth = FaceAuthenticator(
-        "C:/Users/Jammula Nehaja/OneDrive/Desktop/mini proj/face_dataset"
-    )
-
-# Protected resources configuration
-PROTECTED_RESOURCES = {
-    "Notepad": "notepad.exe",
-    "WhatsApp": "whatsapp.exe",
-    "Documents": r"C:/Users/Jammula Nehaja/Documents",
-    "Project Files": r"C:/Users/Jammula Nehaja/OneDrive/Desktop/mini proj"
-}
-
-def execute_protected_action(resource_name):
-    """Handle protected resource access with authentication"""
-    if st.session_state.face_auth.authenticate():
-        resource_path = PROTECTED_RESOURCES.get(resource_name)
-        if resource_path:
-            try:
-                if resource_path.endswith(".exe"):
-                    subprocess.Popen(resource_path)
-                    st.success(f"{resource_name} opened successfully!")
-                else:
-                    os.startfile(resource_path)
-                    st.success(f"{resource_name} accessed successfully!")
-                return True
-            except Exception as e:
-                st.error(f"Failed to open {resource_name}: {str(e)}")
-        else:
-            st.error("Invalid resource specified")
-    return False
+    st.session_state.face_auth = FaceAuthenticator("C:/Users/Jammula Nehaja/OneDrive/Desktop/mini proj/face_dataset")
 
 def listen_for_command():
     """Listen for voice command using microphone"""
@@ -71,158 +52,85 @@ def listen_for_command():
             return "Could not request results"
 
 def execute_system_command(command):
-    """Execute basic system operations based on voice/text command"""
+    """Updated to use CommandExecutor"""
     command = command.lower()
-    response = ""
     
     try:
         # File Manager Commands
         if any(cmd in command for cmd in ["open file manager", "open files", "show files"]):
-            if os.name == 'nt':  # Windows
+            if os.name == 'nt':
                 os.startfile(os.environ['USERPROFILE'])
-                response = "File manager opened"
-            elif os.name == 'posix':  # Mac/Linux
+                return "File manager opened"
+            else:
                 subprocess.run(['xdg-open', os.path.expanduser('~')])
-                response = "File manager opened"
+                return "File manager opened"
         
         # Browser Commands
         elif any(cmd in command for cmd in ["open browser", "open chrome", "open web browser"]):
             webbrowser.open('https://www.google.com')
-            response = "Browser opened"
+            return "Browser opened"
         
         # Terminal Commands
         elif any(cmd in command for cmd in ["open terminal", "open command prompt", "open cmd"]):
-            if os.name == 'nt':  # Windows
+            if os.name == 'nt':
                 os.system('start cmd')
-            elif os.name == 'posix':  # Mac/Linux
-                subprocess.run(['gnome-terminal'])
-            response = "Terminal opened"
-        
-        # Protected Resources - MODIFIED SECTION
-        elif "open notepad" in command:
-            if execute_protected_action("Notepad"):
-                response = "Notepad opened successfully"
             else:
-                response = "Notepad access denied"
+                subprocess.run(['gnome-terminal'])
+            return "Terminal opened"
+        
+        # Protected Resources
+        elif "open notepad" in command:
+            success, response = st.session_state.cmd_exec.execute_protected_action(
+                st.session_state.face_auth, "Notepad"
+            )
+            return response
         
         elif "open whatsapp" in command:
-            if execute_protected_action("WhatsApp"):
-                response = "WhatsApp opened successfully"
-            else:
-                response = "WhatsApp access denied"
+            success, response = st.session_state.cmd_exec.execute_protected_action(
+                st.session_state.face_auth, "WhatsApp"
+            )
+            return response
         
-        elif any(cmd in command for cmd in ["open documents", "my documents"]):
-            if execute_protected_action("Documents"):
-                response = "Documents opened successfully"
-            else:
-                response = "Documents access denied"
+        # Screenshot command
+        elif "take screenshot" in command:
+            success, response = st.session_state.cmd_exec.take_screenshot()
+            if success:
+                try:
+                    if os.name == 'nt':
+                        os.startfile(response)
+                    else:
+                        subprocess.run(['xdg-open', response])
+                except:
+                    pass
+            return response if success else f"Error: {response}"
         
-        elif "open project files" in command:
-            if execute_protected_action("Project Files"):
-                response = "Project files opened successfully"
-            else:
-                response = "Project files access denied"
-        
-        # New System Power Commands
+        # System Power Commands
         elif any(cmd in command for cmd in ["shutdown", "shut down", "turn off"]):
             if os.name == 'nt':
                 os.system("shutdown /s /t 1")
-                response = "System shutting down..."
             else:
                 subprocess.run(['shutdown', '-h', 'now'])
-                response = "System shutting down..."
+            return "System shutting down..."
         
         elif any(cmd in command for cmd in ["restart", "reboot"]):
             if os.name == 'nt':
                 os.system("shutdown /r /t 1")
-                response = "System restarting..."
             else:
                 subprocess.run(['shutdown', '-r', 'now'])
-                response = "System restarting..."
-        
-        elif any(cmd in command for cmd in ["sleep", "hibernate"]):
-            if os.name == 'nt':
-                ctypes.windll.powrprof.SetSuspendState(0, 1, 0)
-                response = "System going to sleep..."
-            else:
-                subprocess.run(['systemctl', 'suspend'])
-                response = "System going to sleep..."
+            return "System restarting..."
         
         elif any(cmd in command for cmd in ["lock screen", "lock computer"]):
             if os.name == 'nt':
                 ctypes.windll.user32.LockWorkStation()
-                response = "Screen locked"
             else:
                 subprocess.run(['gnome-screensaver-command', '-l'])
-                response = "Screen locked"
-        
-        elif "battery saver on" in command:
-            if os.name == 'nt':
-                # Windows battery saver (simplified approach)
-                subprocess.run(['powercfg', '/setactive', 'SCHEME_CURRENT'])
-                response = "Battery saver mode activated"
-            else:
-                # Linux power saving (simplified)
-                subprocess.run(['gnome-power-statistics'])
-                response = "Power saving features enabled"
-        
-        elif "battery status" in command or "battery level" in command:
-            battery = psutil.sensors_battery()
-            if battery:
-                percent = battery.percent
-                plugged = "plugged in" if battery.power_plugged else "not plugged in"
-                response = f"Battery status: {percent}% ({plugged})"
-            else:
-                response = "Battery information not available"
-        
-        elif "system information" in command or "system info" in command:
-            system_info = f"""
-            System: {platform.system()} {platform.release()}
-            Processor: {platform.processor()}
-            Architecture: {platform.architecture()[0]}
-            """
-            if os.name == 'nt':
-                info = subprocess.check_output('systeminfo', shell=True).decode('utf-8')
-                response = f"System Information:\n{system_info}\n{info}"
-            else:
-                info = subprocess.check_output(['uname', '-a']).decode('utf-8')
-                response = f"System Information:\n{system_info}\n{info}"
-        
-        # Rest of your existing commands...
-        elif "take screenshot" in command or "capture screen" in command:
-            screenshots_dir = os.path.join(os.path.expanduser("~"), "Desktop", "Assistant_Screenshots")
-            os.makedirs(screenshots_dir, exist_ok=True)
-            
-            from datetime import datetime
-            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            screenshot_path = os.path.join(screenshots_dir, f"screenshot_{timestamp}.png")
-            
-            screenshot = pyautogui.screenshot()
-            screenshot.save(screenshot_path)
-            
-            if os.path.exists(screenshot_path):
-                response = f"Screenshot saved to: {screenshot_path}"
-                if os.name == 'nt':
-                    os.startfile(screenshot_path)
-                elif os.name == 'posix':
-                    subprocess.run(['xdg-open', screenshot_path])
-            else:
-                response = "Failed to save screenshot"
-        
-        elif "open calculator" in command:
-            if os.name == 'nt':
-                os.system('calc')
-            else:
-                subprocess.run(['gnome-calculator'])
-            response = "Calculator opened"
+            return "Screen locked"
         
         else:
-            response = f"Command not recognized: {command}"
+            return f"Command not recognized: {command}"
     
     except Exception as e:
-        response = f"Error executing command: {str(e)}"
-    
-    return response
+        return f"Error executing command: {str(e)}"
 
 def home_interface():
     """Enhanced home interface with voice and text input"""
@@ -323,5 +231,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
