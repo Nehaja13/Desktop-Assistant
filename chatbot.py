@@ -1,410 +1,223 @@
-
-    
-#211 
-    
-'''import streamlit as st
-from llama_cpp import Llama
-import sounddevice as sd
-import numpy as np
-import scipy.io.wavfile as wav
-import speech_recognition as sr
-import pyttsx3
-import noisereduce as nr
-import tempfile
-import os
-
-def chatbot_interface(conn=None):
-    # Load the model only when needed
-    llm = Llama(
-        model_path="C:/Users/Jammula Nehaja/Downloads/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
-        n_ctx=1024,
-        n_threads=8,
-        n_gpu_layers=20
-    )
-    
-    SYSTEM_PROMPT = """You are a helpful AI assistant. Provide concise, accurate responses. 
-    If you don't know something, say so."""
-    
-    def chat_with_bot(prompt):
-        full_prompt = f"""<|system|>
-    {SYSTEM_PROMPT}</s>
-    <|user|>
-    {prompt}</s>
-    <|assistant|>
-    """
-        response = llm(
-            full_prompt,
-            max_tokens=256,
-            temperature=0.5,
-            top_p=0.7,
-            repeat_penalty=1.1,
-            stop=["</s>", "<|user|>"]
-        )
-        text = response["choices"][0]["text"].strip()
-        for stop in ["<|system|>", "<|user|>"]:
-            text = text.split(stop)[0]
-        return text
-    
-    # Speech recognition functions
-    def record_audio(duration=5, sample_rate=44100):
-        
-        try:
-            st.info(f"Recording for {duration} seconds... Speak now!")
-            audio = sd.rec(int(duration * sample_rate), 
-                        samplerate=sample_rate, 
-                        channels=1, 
-                        dtype='float32')
-            sd.wait()
-            return audio.flatten(), sample_rate
-        except Exception as e:
-            st.error(f"Recording failed: {str(e)}")
-            return None, None
-    
-    def reduce_noise(audio, sample_rate):
-        """Apply noise reduction to audio"""
-        return nr.reduce_noise(y=audio, sr=sample_rate)
-    
-    def recognize_speech(audio, sample_rate):
-        if audio is None:
-            return "No audio recorded"
-        
-        recognizer = sr.Recognizer()
-        temp_file = None
-        
-        try:
-            # Create temporary file
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmpfile:
-                temp_file = tmpfile.name
-                wav.write(temp_file, sample_rate, (audio * 32767).astype(np.int16))
-            
-            # Process audio
-            with sr.AudioFile(temp_file) as source:
-                audio_data = recognizer.record(source)
-                try:
-                    return recognizer.recognize_google(audio_data)
-                except sr.UnknownValueError:
-                    return "Could not understand audio"
-                except sr.RequestError as e:
-                    return f"API Error: {str(e)}"
-        except Exception as e:
-            st.error(f"Speech recognition error: {str(e)}")
-            return "Processing error"
-        finally:
-            # Clean up temp file
-            if temp_file and os.path.exists(temp_file):
-                try:
-                    os.unlink(temp_file)
-                except:
-                    pass  # File will be cleaned up by system eventually
-    
-    def text_to_speech(text):
-        """Convert text to speech"""
-        engine = pyttsx3.init()
-        engine.setProperty('rate', 150)  # Speed of speech
-        engine.setProperty('volume', 0.9)  # Volume level
-        engine.say(text)
-        engine.runAndWait()
-    
-    # Chatbot UI
-    st.title("🤖 Offline Chatbot with Voice")
-    
-    # Voice input/output controls
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("🎤 Voice Input"):
-            audio, sample_rate = record_audio()
-            cleaned_audio = reduce_noise(audio, sample_rate)
-            user_input = recognize_speech(cleaned_audio, sample_rate)
-            if user_input and user_input not in ["Could not understand audio", "API unavailable"]:
-                st.session_state.voice_input = user_input
-    
-    with col2:
-        voice_output = st.checkbox("🔊 Voice Output", value=False)
-    
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-    
-    # Check for voice input
-    if "voice_input" in st.session_state and st.session_state.voice_input:
-        user_input = st.session_state.voice_input
-        del st.session_state.voice_input
-    else:
-        user_input = st.chat_input("Your message (or use voice input):")
-    
-    if user_input:
-        st.session_state.messages.append(("user", user_input))
-        with st.spinner("Thinking..."):
-            try:
-                bot_response = chat_with_bot(user_input)
-                st.session_state.messages.append(("bot", bot_response))
-                
-                # Voice output if enabled
-                if voice_output:
-                    with st.spinner("Generating voice response..."):
-                        text_to_speech(bot_response)
-            except Exception as e:
-                st.error(f"Error: {str(e)}")
-    
-    # Display messages
-    for sender, msg in st.session_state.messages:
-        if sender == "user":
-            with st.chat_message("user"):
-                st.write(msg)
-        else:
-            with st.chat_message("assistant"):
-                st.write(msg)
-
-# For standalone execution
-if __name__ == "__main__":
-    st.set_page_config(page_title="Offline Chatbot with Voice")
-    chatbot_interface()'''
-    
-    
-    
-#pip install vosk sounddevice noisereduce pyttsx3 
 import streamlit as st
 from llama_cpp import Llama
 import sounddevice as sd
 import numpy as np
-import scipy.io.wavfile as wav
-import speech_recognition as sr
-import pyttsx3
 import noisereduce as nr
-import tempfile
-import os
+import pyttsx3
 from vosk import Model, KaldiRecognizer
 import json
+import queue
+import threading
 
 def chatbot_interface():
     # Load LLM model
-    llm = Llama(
-        model_path="C:/Users/Jammula Nehaja/Downloads/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
-        n_ctx=1024,
-        n_threads=8,
-        n_gpu_layers=20
-    )
+    st.header("🤖 Offline Chatbot with Audio Analysis")
     
-    # Load Vosk model (place in project directory)
-    vosk_model = Model(r"C:/Users/Jammula Nehaja/OneDrive/Desktop/mini proj/vosk-model-small-en-us-0.15/vosk-model-small-en-us-0.15")  # Update path
+    # Initialize with default values
+    llm = None
+    vosk_model = None
     
-    SYSTEM_PROMPT = """You are a helpful AI assistant. Provide concise, accurate responses."""
-    
-    def chat_with_bot(prompt):
-        full_prompt = f"""<|system|>{SYSTEM_PROMPT}</s><|user|>{prompt}</s><|assistant|>"""
-        response = llm(
-            full_prompt,
-            max_tokens=256,
-            temperature=0.5,
-            top_p=0.7,
-            repeat_penalty=1.1,
-            stop=["</s>", "<|user|>"]
+    try:
+        llm = Llama(
+            model_path="C:/Users/Jammula Nehaja/Downloads/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",  # Update this path
+            n_ctx=1024,
+            n_threads=8,
+            n_gpu_layers=20
         )
-        return response["choices"][0]["text"].strip().split("<|")[0]
-    
-    def record_audio(duration=4, sample_rate=16000):
-        """Record audio optimized for speech recognition"""
+    except Exception as e:
+        st.error(f"Failed to load LLM model: {str(e)}")
+        return
+
+    try:
+        vosk_model = Model(r"C:/Users/Jammula Nehaja/OneDrive/Desktop/face_app/vosk-model-small-en-us-0.15")  # Update this path
+    except Exception as e:
+        st.error(f"Failed to load Vosk model: {str(e)}")
+        return
+
+    SYSTEM_PROMPT = "You are a helpful AI assistant. Provide concise, accurate responses."
+
+    def chat_with_bot(prompt):
         try:
-            st.info("Speak now...")
-            audio = sd.rec(int(duration * sample_rate),
-                         samplerate=sample_rate,
-                         channels=1,
-                         dtype='float32')
+            full_prompt = f"""<|system|>{SYSTEM_PROMPT}</s><|user|>{prompt}</s><|assistant|>"""
+            response = llm(
+                full_prompt,
+                max_tokens=256,
+                temperature=0.5,
+                top_p=0.7,
+                repeat_penalty=1.1,
+                stop=["</s>", "<|user|>"]
+            )
+            return response["choices"][0]["text"].strip().split("<|")[0]
+        except Exception as e:
+            st.error(f"Error in chat_with_bot: {str(e)}")
+            return "I encountered an error processing your request."
+
+    # Audio processing queue for better performance
+    audio_queue = queue.Queue()
+    
+    def record_audio(duration=6, sample_rate=16000):
+        """Record audio with error handling"""
+        try:
+            st.info("🎙 Speak now or play audio near mic...")
+            audio = sd.rec(int(duration * sample_rate), 
+                          samplerate=sample_rate, 
+                          channels=1, 
+                          dtype='float32')
             sd.wait()
             return audio.flatten(), sample_rate
         except Exception as e:
             st.error(f"Recording error: {str(e)}")
             return None, None
-    
+
     def enhance_audio(audio, sample_rate):
-        """Audio processing pipeline"""
+        """Denoise and normalize audio"""
         try:
-            audio = audio / np.max(np.abs(audio))  # Normalize
+            if audio is None or len(audio) == 0:
+                return audio
+                
+            if np.max(np.abs(audio)) == 0:
+                return audio
+                
+            audio = audio / np.max(np.abs(audio))
             return nr.reduce_noise(y=audio, sr=sample_rate, prop_decrease=0.7)
-        except:
+        except Exception as e:
+            st.warning(f"Audio enhancement error: {str(e)}")
             return audio
-    
+
     def recognize_speech(audio, sample_rate):
-        """Offline recognition with Vosk"""
-        if audio is None:
+        """Speech-to-text using Vosk"""
+        if audio is None or len(audio) == 0:
             return None
-        
+            
         try:
-            # Convert to 16-bit PCM
             audio_int16 = (audio * 32767).astype(np.int16)
-            
-            # Initialize recognizer
             recognizer = KaldiRecognizer(vosk_model, sample_rate)
-            recognizer.AcceptWaveform(audio_int16.tobytes())
+            recognizer.SetWords(True)
             
-            # Get final result
+            # Process in chunks for better performance
+            chunk_size = 4000
+            for i in range(0, len(audio_int16), chunk_size):
+                chunk = audio_int16[i:i+chunk_size]
+                recognizer.AcceptWaveform(chunk.tobytes())
+                
             result = json.loads(recognizer.FinalResult())
-            raw_text = result.get("text", "")
-            
-            # Text correction for common mistakes
+            raw_text = result.get("text", "").strip()
+
+            # Correction map (optional)
             corrections = {
                 "what these by don": "what is Python",
                 "what is by don": "what is Python",
                 "what is john": "what is Python",
-                "what is java": "what is Java"
+                "what is driver": "what is Java",
+                "what is javan": "what is Java",
+                "what is drama": "what is Java",
             }
             return corrections.get(raw_text.lower(), raw_text)
-        except:
+        except Exception as e:
+            st.warning(f"Recognition error: {str(e)}")
             return None
-    
+
     def text_to_speech(text):
-        """Offline text-to-speech"""
+        """Offline TTS with error handling"""
         try:
             engine = pyttsx3.init()
             engine.setProperty('rate', 150)
             engine.say(text)
             engine.runAndWait()
-        except:
-            pass
-    
-    # UI Setup
-    st.title("🤖 Fully Offline Chatbot")
-    
+        except Exception as e:
+            st.warning(f"TTS error: {str(e)}")
+
+    # Initialize session state
     if "messages" not in st.session_state:
         st.session_state.messages = []
-    
-    # Voice Input
-    if st.button("🎤 Voice Input"):
+    if "voice_output" not in st.session_state:
+        st.session_state.voice_output = True
+    if "audio_memory" not in st.session_state:
+        st.session_state.audio_memory = ""
+    if "transcript_ready" not in st.session_state:
+        st.session_state.transcript_ready = False
+    if "audio_transcript" not in st.session_state:
+        st.session_state.audio_transcript = ""
+
+    # UI Controls
+    st.session_state.voice_output = st.checkbox("🔊 Enable Voice Output", value=st.session_state.voice_output)
+
+    col1, col2 = st.columns(2)
+
+    # 🎤 Regular Voice Input
+    if col1.button("🎤 Ask by Speaking"):
         audio, sr = record_audio()
         if audio is not None:
             st.audio(audio, sample_rate=sr)
-            cleaned_audio = enhance_audio(audio, sr)
-            user_input = recognize_speech(cleaned_audio, sr)
-            
-            if user_input:
-                st.session_state.messages.append(("user", user_input))
-                with st.spinner("Thinking..."):
-                    bot_response = chat_with_bot(user_input)
-                    st.session_state.messages.append(("bot", bot_response))
-                    
-                    if st.session_state.get("voice_output", False):
-                        text_to_speech(bot_response)
-            else:
-                st.warning("Could not understand audio")
-    
+            with st.spinner("Processing audio..."):
+                cleaned = enhance_audio(audio, sr)
+                transcript = recognize_speech(cleaned, sr)
+
+                if transcript:
+                    st.session_state.messages.append(("user", transcript))
+                    with st.spinner("Thinking..."):
+                        response = chat_with_bot(transcript)
+                        st.session_state.messages.append(("bot", response))
+                        if st.session_state.voice_output:
+                            text_to_speech(response)
+                else:
+                    st.warning("Could not recognize your voice. Try again.")
+
+    # 🎧 Audio Input (from device)
+    if col2.button("🎧 Analyze Audio from Source"):
+        audio, sr = record_audio(duration=10)
+        if audio is not None:
+            st.audio(audio, sample_rate=sr)
+            with st.spinner("Processing audio..."):
+                cleaned = enhance_audio(audio, sr)
+                transcript = recognize_speech(cleaned, sr)
+
+                if transcript:
+                    st.success(f"🔎 Transcript: {transcript}")
+                    st.session_state.audio_transcript = transcript
+                    st.session_state.audio_memory = transcript
+                    st.session_state.transcript_ready = True
+                else:
+                    st.warning("No speech detected. Try again with clearer audio.")
+
+    # Follow-up question logic
+    if st.session_state.transcript_ready:
+        question = st.text_input("What do you want to ask about the audio?", key="audio_query_input")
+        if question:
+            full_query = f"Audio content: '{st.session_state.audio_transcript}'. Question: {question}"
+            with st.spinner("Thinking..."):
+                response = chat_with_bot(full_query)
+                st.session_state.messages.append(("user", question))
+                st.session_state.messages.append(("bot", response))
+                if st.session_state.voice_output:
+                    text_to_speech(response)
+
+            # Reset the state
+            st.session_state.transcript_ready = False
+            st.session_state.audio_transcript = ""
+
     # Text Input
-    user_input = st.chat_input("Type your message...")
+    user_input = st.chat_input("💬 Type your message...")
     if user_input:
+        # Check if user is referring to previous audio
+        if any(keyword in user_input.lower() for keyword in ["audio", "that", "what was said"]):
+            if st.session_state.audio_memory:
+                user_input = f"""User previously analyzed this audio: "{st.session_state.audio_memory}". 
+Now respond to: {user_input}"""
+            else:
+                st.warning("No previous audio to reference")
+
         st.session_state.messages.append(("user", user_input))
         with st.spinner("Thinking..."):
             bot_response = chat_with_bot(user_input)
             st.session_state.messages.append(("bot", bot_response))
-            
-            if st.session_state.get("voice_output", False):
+            if st.session_state.voice_output:
                 text_to_speech(bot_response)
-    
-    # Voice Output Toggle
-    st.session_state.voice_output = st.checkbox("🔊 Voice Output")
-    
-    # Display Messages
+
+    # Chat Display
     for sender, message in st.session_state.messages:
         with st.chat_message(sender):
-            st.write(message)
+            st.markdown(message)
 
 if __name__ == "__main__":
-    st.set_page_config(page_title="Offline Chatbot")
     chatbot_interface()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-   
-    
-
-
-
-
-
-
-
-
-# import streamlit as st
-# from llama_cpp import Llama
-
-# # Load the model (moved inside the function to avoid loading when imported)
-# SYSTEM_PROMPT = """You are a helpful AI assistant. Provide concise, accurate responses. 
-# If you don't know something, say so."""
-
-# def chatbot_interface(conn=None):
-#     # Initialize the model only when the chatbot interface is actually used
-#     llm = Llama(
-#         model_path="C:/Users/Jammula Nehaja/Downloads/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
-#         n_ctx=1024,
-#         n_threads=8,
-#         n_gpu_layers=20
-#     )
-
-#     def chat_with_bot(prompt):
-#         full_prompt = f"""<|system|>
-#     {SYSTEM_PROMPT}</s>
-#     <|user|>
-#     {prompt}</s>
-#     <|assistant|>
-#     """
-#         response = llm(
-#             full_prompt,
-#             max_tokens=256,
-#             temperature=0.5,
-#             top_p=0.7,
-#             repeat_penalty=1.1,
-#             stop=["</s>", "<|user|>"]
-#         )
-#         text = response["choices"][0]["text"].strip()
-#         for stop in ["<|system|>", "<|user|>"]:
-#             text = text.split(stop)[0]
-#         return text
-
-#     # Streamlit UI
-#     st.title("🤖 Offline Chatbot")
-    
-#     if "messages" not in st.session_state:
-#         st.session_state.messages = []
-
-#     user_input = st.chat_input("Your message:")
-
-#     if user_input:
-#         st.session_state.messages.append(("user", user_input))
-        
-#         with st.spinner("Thinking..."):
-#             try:
-#                 bot_response = chat_with_bot(user_input)
-#                 st.session_state.messages.append(("bot", bot_response))
-#             except Exception as e:
-#                 st.error(f"Error: {str(e)}")
-
-#     # Display messages
-#     for sender, msg in st.session_state.messages:
-#         if sender == "user":
-#             with st.chat_message("user"):
-#                 st.write(msg)
-#         else:
-#             with st.chat_message("assistant"):
-#                 st.write(msg)
-
-# # This allows the file to be run standalone
-# if __name__ == "__main__":
-#     st.set_page_config(page_title="Offline Chatbot")  # Only for standalone use
-#     chatbot_interface()
