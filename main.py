@@ -1,9 +1,11 @@
+
 import streamlit as st
 st.set_page_config(
     page_title="AI Desktop Assistant",
     page_icon="🤖",
     layout="wide"
 )
+
 import os
 import subprocess
 import pyautogui
@@ -15,18 +17,11 @@ import ctypes  # For Windows system commands
 import psutil  # For battery information
 import platform  # For system info
 from pathlib import Path
-
-# Set page config MUST be the first Streamlit command and after imports
-
-# Import all your existing modules
 from ocr_exec import ocr_interface
-from face_gui import FaceAuthenticator  # Changed from protect_resource
 from calorie_tracker import calorie_tracker_interface
 from chatbot import chatbot_interface
 
-
 def load_css():
-    """Load and apply custom CSS styles"""
     css_file = Path("assets/style.css")
     if css_file.exists():
         with open(css_file) as f:
@@ -34,23 +29,14 @@ def load_css():
     else:
         st.warning("CSS file not found!")
 
-
-
-
 def initialize_app():
-    """Initialize all app configurations"""
-    # Load CSS
     css_file = Path("assets/style.css")
     if css_file.exists():
         with open(css_file) as f:
             st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
-    
-    # Initialize session state variables
     if 'dark_mode' not in st.session_state:
         st.session_state.dark_mode = False
 
-
-#NAVBAR CSS
 def load_nav_css():
     st.markdown("""
     <style>
@@ -58,24 +44,18 @@ def load_nav_css():
         from { opacity: 0; transform: translateY(-10px); }
         to { opacity: 1; transform: translateY(0); }
     }
-    
     .nav-item {
         animation: fadeIn 0.5s ease-out forwards;
         opacity: 0;
     }
-    
     .nav-item:nth-child(1) { animation-delay: 0.1s; }
     .nav-item:nth-child(2) { animation-delay: 0.3s; }
     .nav-item:nth-child(3) { animation-delay: 0.5s; }
     .nav-item:nth-child(4) { animation-delay: 0.7s; }
     .nav-item:nth-child(5) { animation-delay: 0.9s; }
-    
-    /* Make sidebar wider for better navigation */
     [data-testid="stSidebar"] {
         width: 300px !important;
     }
-    
-    /* Navigation item hover effects */
     .nav-item:hover {
         background-color: rgba(0,0,0,0.05);
         border-radius: 8px;
@@ -96,17 +76,11 @@ def create_nav_item(icon, text, delay=0):
         """,
         unsafe_allow_html=True
     )
-    return st.empty()  # Return empty to control timing if needed
+    return st.empty()
 
-
-
-# Initialize face authenticator in session state
 if 'face_auth' not in st.session_state:
-    st.session_state.face_auth = FaceAuthenticator(
-        "C:/Users/Jammula Nehaja/OneDrive/Desktop/mini proj/face_dataset"
-    )
+    st.session_state.face_auth = FaceAuthenticator("C:/Users/Jammula Nehaja/OneDrive/Desktop/mini proj/face_dataset")
 
-# Protected resources configuration
 PROTECTED_RESOURCES = {
     "Notepad": "notepad.exe",
     "WhatsApp": "whatsapp.exe",
@@ -114,24 +88,17 @@ PROTECTED_RESOURCES = {
     "Project Files": r"C:/Users/Jammula Nehaja/OneDrive/Desktop/mini proj"
 }
 
-def execute_protected_action(resource_name):
-    """Handle protected resource access with authentication"""
-    if st.session_state.face_auth.authenticate():
-        resource_path = PROTECTED_RESOURCES.get(resource_name)
-        if resource_path:
-            try:
-                if resource_path.endswith(".exe"):
-                    subprocess.Popen(resource_path)
-                    st.success(f"{resource_name} opened successfully!")
-                else:
-                    os.startfile(resource_path)
-                    st.success(f"{resource_name} accessed successfully!")
-                return True
-            except Exception as e:
-                st.error(f"Failed to open {resource_name}: {str(e)}")
-        else:
-            st.error("Invalid resource specified")
-    return False
+# ---- REPLACE HERE WITH FUNCTION CONTENT ----
+# We'll insert the fixed versions of:
+# - listen_for_command
+# - execute_system_command
+# - home_interface
+# - process_command
+# - handle_authentication_flow
+# - navigation
+# - main
+
+# The remaining part will be appended in the next step
 
 def listen_for_command():
     """Listen for voice command using microphone"""
@@ -151,242 +118,152 @@ def execute_system_command(command):
     """Execute basic system operations based on voice/text command"""
     command = command.lower()
     response = ""
-    
     try:
-        # File Manager Commands
         if any(cmd in command for cmd in ["open file manager", "open files", "show files"]):
-            if os.name == 'nt':  # Windows
+            if os.name == 'nt':
                 os.startfile(os.environ['USERPROFILE'])
                 response = "File manager opened"
-            elif os.name == 'posix':  # Mac/Linux
+            else:
                 subprocess.run(['xdg-open', os.path.expanduser('~')])
                 response = "File manager opened"
-        
-        # Browser Commands
         elif any(cmd in command for cmd in ["open browser", "open chrome", "open web browser"]):
             webbrowser.open('https://www.google.com')
             response = "Browser opened"
-        
-        # Terminal Commands
-        elif any(cmd in command for cmd in ["open terminal", "open command prompt", "open cmd"]):
-            if os.name == 'nt':  # Windows
+        elif "open terminal" in command or "open command prompt" in command:
+            if os.name == 'nt':
                 os.system('start cmd')
-            elif os.name == 'posix':  # Mac/Linux
+            else:
                 subprocess.run(['gnome-terminal'])
             response = "Terminal opened"
-        
-        # Protected Resources - MODIFIED SECTION
-        elif "open notepad" in command:
-            if execute_protected_action("Notepad"):
-                response = "Notepad opened successfully"
-            else:
-                response = "Notepad access denied"
-        
-        elif "open whatsapp" in command:
-            if execute_protected_action("WhatsApp"):
-                response = "WhatsApp opened successfully"
-            else:
-                response = "WhatsApp access denied"
-        
-        elif any(cmd in command for cmd in ["open documents", "my documents"]):
-            if execute_protected_action("Documents"):
-                response = "Documents opened successfully"
-            else:
-                response = "Documents access denied"
-        
-        elif "open project files" in command:
-            if execute_protected_action("Project Files"):
-                response = "Project files opened successfully"
-            else:
-                response = "Project files access denied"
-        
-        # New System Power Commands
-        elif any(cmd in command for cmd in ["shutdown", "shut down", "turn off"]):
-            if os.name == 'nt':
-                os.system("shutdown /s /t 1")
-                response = "System shutting down..."
-            else:
-                subprocess.run(['shutdown', '-h', 'now'])
-                response = "System shutting down..."
-        
-        elif any(cmd in command for cmd in ["restart", "reboot"]):
-            if os.name == 'nt':
-                os.system("shutdown /r /t 1")
-                response = "System restarting..."
-            else:
-                subprocess.run(['shutdown', '-r', 'now'])
-                response = "System restarting..."
-        
-        elif any(cmd in command for cmd in ["sleep", "hibernate"]):
-            if os.name == 'nt':
-                ctypes.windll.powrprof.SetSuspendState(0, 1, 0)
-                response = "System going to sleep..."
-            else:
-                subprocess.run(['systemctl', 'suspend'])
-                response = "System going to sleep..."
-        
-        elif any(cmd in command for cmd in ["lock screen", "lock computer"]):
-            if os.name == 'nt':
-                ctypes.windll.user32.LockWorkStation()
-                response = "Screen locked"
-            else:
-                subprocess.run(['gnome-screensaver-command', '-l'])
-                response = "Screen locked"
-        
-        elif "battery saver on" in command:
-            if os.name == 'nt':
-                # Windows battery saver (simplified approach)
-                subprocess.run(['powercfg', '/setactive', 'SCHEME_CURRENT'])
-                response = "Battery saver mode activated"
-            else:
-                # Linux power saving (simplified)
-                subprocess.run(['gnome-power-statistics'])
-                response = "Power saving features enabled"
-        
-        elif "battery status" in command or "battery level" in command:
-            battery = psutil.sensors_battery()
-            if battery:
-                percent = battery.percent
-                plugged = "plugged in" if battery.power_plugged else "not plugged in"
-                response = f"Battery status: {percent}% ({plugged})"
-            else:
-                response = "Battery information not available"
-        
-        elif "system information" in command or "system info" in command:
-            system_info = f"""
-            System: {platform.system()} {platform.release()}
-            Processor: {platform.processor()}
-            Architecture: {platform.architecture()[0]}
-            """
-            if os.name == 'nt':
-                info = subprocess.check_output('systeminfo', shell=True).decode('utf-8')
-                response = f"System Information:\n{system_info}\n{info}"
-            else:
-                info = subprocess.check_output(['uname', '-a']).decode('utf-8')
-                response = f"System Information:\n{system_info}\n{info}"
-        
-        # Rest of your existing commands...
-        elif "take screenshot" in command or "capture screen" in command:
-            screenshots_dir = os.path.join(os.path.expanduser("~"), "Desktop", "Assistant_Screenshots")
-            os.makedirs(screenshots_dir, exist_ok=True)
-            
-            from datetime import datetime
-            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            screenshot_path = os.path.join(screenshots_dir, f"screenshot_{timestamp}.png")
-            
-            screenshot = pyautogui.screenshot()
-            screenshot.save(screenshot_path)
-            
-            if os.path.exists(screenshot_path):
-                response = f"Screenshot saved to: {screenshot_path}"
-                if os.name == 'nt':
-                    os.startfile(screenshot_path)
-                elif os.name == 'posix':
-                    subprocess.run(['xdg-open', screenshot_path])
-            else:
-                response = "Failed to save screenshot"
-        
         elif "open calculator" in command:
             if os.name == 'nt':
                 os.system('calc')
             else:
                 subprocess.run(['gnome-calculator'])
             response = "Calculator opened"
-        
         else:
             response = f"Command not recognized: {command}"
-    
     except Exception as e:
         response = f"Error executing command: {str(e)}"
-    
     return response
 
 def home_interface():
     """Enhanced home interface with voice and text input"""
     st.title("🌟 Your AI Desktop Assistant")
     st.write("Welcome to your personal assistant. How can I help you today?")
-    
-    # Display command examples
+
     with st.expander("💡 Available Commands"):
         st.write("""
+        - **Protected Resources**: "open notepad", "open whatsapp" (require facial authentication)
         - **File Operations**: "open file manager", "show my files"
         - **Browser**: "open chrome", "open browser"
         - **Terminal**: "open terminal", "open command prompt"
-        - **Applications**: "open notepad", "open calculator"
-        - **System**: 
-            - "take screenshot", "system info"
-            - "shutdown", "restart", "sleep"
-            - "lock screen", "battery status"
+        - **System**: "shutdown", "restart", "lock screen", "battery status"
         """)
-    
-    # Input options
+
+    if 'auth_state' not in st.session_state:
+        st.session_state.auth_state = {'in_progress': False, 'resource_name': None, 'command': None}
+
     input_option = st.radio("Choose input method:", ("Text", "Voice"))
-    
-    command = ""
+
     if input_option == "Text":
-        command = st.text_input("Enter your command:", placeholder="e.g., 'open file manager'")
+        command = st.text_input("Enter your command:", placeholder="e.g., 'open notepad'")
         if st.button("Submit") and command:
-            result = execute_system_command(command)
-            st.success(result)
+            process_command(command)
     else:
         if st.button("🎤 Start Voice Command"):
             with st.spinner("Listening..."):
                 command = listen_for_command()
             if command:
-                st.text_area("Heard command:", value=command, height=100, 
-                           placeholder="Your voice command will appear here...",
-                           label_visibility="collapsed")
+                st.text_area("Heard command:", value=command, height=100, label_visibility="collapsed")
                 if "could not" not in command.lower():
-                    result = execute_system_command(command)
-                    st.success(result)
-    
-    # Quick access buttons
+                    process_command(command)
+
+    if st.session_state.auth_state['in_progress']:
+        handle_authentication_flow()
+
     st.subheader("Quick Actions")
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         if st.button("📂 Open File Manager"):
-            result = execute_system_command("open file manager")
-            st.success(result)
+            process_command("open file manager")
     with col2:
         if st.button("🌐 Open Browser"):
-            result = execute_system_command("open chrome")
-            st.success(result)
+            process_command("open chrome")
     with col3:
         if st.button("💻 Open Terminal"):
-            result = execute_system_command("open terminal")
-            st.success(result)
+            process_command("open terminal")
     with col4:
         if st.button("📷 Take Screenshot"):
-            result = execute_system_command("take screenshot")
-            st.success(result)
-    
-    # System Power Buttons (in a new row)
-    st.subheader("System Controls")
-    power_col1, power_col2, power_col3, power_col4 = st.columns(4)
-    with power_col1:
-        if st.button("🔌 Shutdown", help="Shutdown the computer"):
-            result = execute_system_command("shutdown")
-            st.success(result)
-    with power_col2:
-        if st.button("🔄 Restart", help="Restart the computer"):
-            result = execute_system_command("restart")
-            st.success(result)
-    with power_col3:
-        if st.button("💤 Sleep", help="Put computer to sleep"):
-            result = execute_system_command("sleep")
-            st.success(result)
-    with power_col4:
-        if st.button("🔒 Lock Screen", help="Lock the computer"):
-            result = execute_system_command("lock screen")
-            st.success(result)
+            process_command("take screenshot")
 
-#NAB
+    st.subheader("System Controls")
+    pc1, pc2, pc3, pc4 = st.columns(4)
+    with pc1:
+        if st.button("🔌 Shutdown"):
+            process_command("shutdown")
+    with pc2:
+        if st.button("🔄 Restart"):
+            process_command("restart")
+    with pc3:
+        if st.button("💤 Sleep"):
+            process_command("sleep")
+    with pc4:
+        if st.button("🔒 Lock Screen"):
+            process_command("lock screen")
+
+def process_command(command):
+    """Process the command and check if authentication is needed"""
+    protected_resources = {
+        "notepad": "Notepad",
+        "whatsapp": "WhatsApp",
+        "documents": "Documents",
+        "project files": "Project Files"
+    }
+    for cmd, name in protected_resources.items():
+        if cmd in command.lower():
+            st.session_state.auth_state = {
+                'in_progress': True,
+                'resource_name': name,
+                'command': command
+            }
+            st.rerun()
+            return
+    result = execute_system_command(command)
+    st.success(result)
+
+def handle_authentication_flow():
+    """Handle the facial authentication flow"""
+    auth_state = st.session_state.auth_state
+    st.warning(f"🔒 Authentication required to access {auth_state['resource_name']}")
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        if st.button("❌ Cancel"):
+            st.session_state.auth_state = {'in_progress': False, 'resource_name': None, 'command': None}
+            st.rerun()
+    with col2:
+        if st.button("👤 Authenticate"):
+            if st.session_state.face_auth.authenticate():
+                st.success("✅ Authentication successful!")
+                try:
+                    path = PROTECTED_RESOURCES.get(auth_state['resource_name'])
+                    if path.endswith(".exe"):
+                        subprocess.Popen(path)
+                    else:
+                        os.startfile(path)
+                    st.success(f"{auth_state['resource_name']} opened successfully!")
+                except Exception as e:
+                    st.error(f"❌ Failed to open {auth_state['resource_name']}: {str(e)}")
+                finally:
+                    st.session_state.auth_state = {'in_progress': False, 'resource_name': None, 'command': None}
+                    st.rerun()
+            else:
+                st.error("❌ Authentication failed. Please try again.")
+
 def navigation():
     """Clean navigation without boxes"""
     with st.sidebar:
         st.markdown("<h2 style='margin-bottom: 20px;'>Navigation</h2>", unsafe_allow_html=True)
-        
-        # Navigation items
         nav_items = [
             ("🏠", "Home"),
             ("💬", "Chatbot"), 
@@ -394,43 +271,17 @@ def navigation():
             ("🔍", "OCR"),
             ("🍏", "Health Tracker")
         ]
-        
         for icon, text in nav_items:
-            # Create invisible button with custom styled label
-            if st.button(
-                f"{icon} {text}",
-                key=f"nav_{text.lower().replace(' ', '_')}",
-                help=f"Go to {text}",
-            ):
+            if st.button(f"{icon} {text}", key=f"nav_{text.lower().replace(' ', '_')}", help=f"Go to {text}"):
                 st.session_state.current_page = text
                 st.rerun()
-            
-            # Add CSS class to the button's container
-            st.markdown(
-                f"""
-                <script>
-                document.querySelector('[data-testid="stButton"][label="{icon} {text}"]')
-                    .parentElement.classList.add('nav-item');
-                </script>
-                """,
-                unsafe_allow_html=True
-            )
-
-
-
 
 def main():
     initialize_app()
     load_nav_css()
-    
-    # Initialize session state for current page
     if 'current_page' not in st.session_state:
         st.session_state.current_page = "Home"
-    
-    # Show navigation
     navigation()
-    
-    # Main content area with transition
     st.markdown("""
     <style>
     .page-content {
@@ -438,26 +289,8 @@ def main():
     }
     </style>
     """, unsafe_allow_html=True)
-    # st.sidebar.title("Navigation")
-    # app_mode = st.sidebar.radio(
-    #     "Choose a feature:",
-    #     ["🏠 Home", "💬 Chatbot", "👤 Face Auth", "🔍 OCR", "🍏 Health Tracker"]
-    # )
-    
-    # if app_mode == "🏠 Home":
-    #     home_interface()
-    # elif app_mode == "💬 Chatbot":
-    #     chatbot_interface()
-    # elif app_mode == "👤 Face Auth":
-    #     st.session_state.face_auth.authenticate()  # Direct access to auth interface
-    # elif app_mode == "🔍 OCR":
-    #     ocr_interface()
-    # elif app_mode == "🍏 Health Tracker":
-    #     calorie_tracker_interface()
-    
     with st.container():
         st.markdown(f"<div class='page-content'>", unsafe_allow_html=True)
-        
         if st.session_state.current_page == "Home":
             home_interface()
         elif st.session_state.current_page == "Chatbot":
@@ -468,49 +301,7 @@ def main():
             ocr_interface()
         elif st.session_state.current_page == "Health Tracker":
             calorie_tracker_interface()
-            
         st.markdown("</div>", unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
